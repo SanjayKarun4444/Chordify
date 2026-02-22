@@ -122,7 +122,7 @@ export default function MidiExport({ progression }: MidiExportProps) {
                   borderTopColor: "var(--color-gold)",
                 }}
               />
-              {" "}Building\u2026
+              {" Building…"}
             </>
           ) : (
             "\u2B07 Download ZIP"
