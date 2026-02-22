@@ -13,7 +13,7 @@ export default function SnareSVG() {
       <ellipse cx={0} cy={0} rx={30} ry={22}
         fill="none" stroke="rgba(255,209,102,0.18)" strokeWidth={0.6} />
       <text y={42} textAnchor="middle"
-        fill="var(--color-text-dim)" fontSize={9} fontFamily="var(--font-mono)">
+        fill="var(--color-text-dim)" fontSize={14} fontFamily="var(--font-mono)">
         SNARE
       </text>
     </>

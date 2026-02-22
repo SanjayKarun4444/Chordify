@@ -3,9 +3,21 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { Progression, ChatMessage, MelodyNote } from "@/lib/types";
 import { DEFAULT_PROGRESSIONS } from "@/lib/constants";
-import { ensureAudioGraph, getMasterGain, getBassBus, getDrumGain, getHatPanner, setMasterVol as setMasterVolAudio } from "@/lib/audio-engine";
+import {
+  ensureAudioGraph,
+  getMasterGain,
+  getBassBus,
+  getDrumGain,
+  getHatPanner,
+  setMasterVol as setMasterVolAudio,
+} from "@/lib/audio-engine";
 import { playVoice } from "@/lib/voices";
-import { playDrum, initSamplePlayer, getSamplePlayer, setDrumEngineMode } from "@/lib/drums";
+import {
+  playDrum,
+  initSamplePlayer,
+  getSamplePlayer,
+  setDrumEngineMode,
+} from "@/lib/drums";
 import type { DrumEngineMode } from "@/lib/audio/drums/types";
 import { getPackForGenre } from "@/lib/audio/drums/genre-pack-map";
 import { chordToMidi, normalizeToDisplayRange } from "@/lib/chord-utils";
@@ -13,10 +25,17 @@ import { generateMelody, playMelodyNote } from "@/lib/melody-engine";
 import { LookaheadScheduler } from "@/lib/scheduler";
 import { triggerSidechainDuck } from "@/lib/effects";
 import type { StepGridPattern } from "@/lib/drums/pattern-library";
-import { stepGridToDrumPattern, PATTERN_MAP } from "@/lib/drums/pattern-library";
+import {
+  stepGridToDrumPattern,
+  PATTERN_MAP,
+} from "@/lib/drums/pattern-library";
 import { useDrumRecommendations } from "@/hooks/useDrumRecommendations";
 import { useDrumPreview } from "@/hooks/useDrumPreview";
-import { updateMixState, setDrumIntensity as setMixDrumIntensity, setMelodyPriority as setMixMelodyPriority } from "@/lib/mix-engine";
+import {
+  updateMixState,
+  setDrumIntensity as setMixDrumIntensity,
+  setMelodyPriority as setMixMelodyPriority,
+} from "@/lib/mix-engine";
 import BackgroundCanvas from "./background-canvas";
 import LoadingScreen from "./loading-screen";
 import Header from "./header";
@@ -29,8 +48,13 @@ import ChordCard from "./chord-card";
 import MidiExport from "./midi-export";
 import DrumPatternSelector from "./drum-pattern-selector";
 import DrumColumn from "./drum-kit/drum-kit";
-import { LEFT_COLUMN_PIECES, RIGHT_COLUMN_PIECES } from "./drum-kit/drum-kit-types";
+import {
+  LEFT_COLUMN_PIECES,
+  RIGHT_COLUMN_PIECES,
+} from "./drum-kit/drum-kit-types";
 import { useDrumKitState } from "@/hooks/useDrumKitState";
+import { useInstrumentRecommendations } from "@/hooks/useInstrumentRecommendations";
+import InstrumentBrowser from "./instrument-browser";
 
 interface PlaybackRef {
   scheduler: LookaheadScheduler | null;
@@ -67,7 +91,8 @@ export default function ChordStudio() {
 
   // Drum pattern system state
   const [drumPatternPanelOpen, setDrumPatternPanelOpen] = useState(false);
-  const [activeStepGridPattern, setActiveStepGridPattern] = useState<StepGridPattern | null>(null);
+  const [activeStepGridPattern, setActiveStepGridPattern] =
+    useState<StepGridPattern | null>(null);
   const [drumIntensity, setDrumIntensity] = useState(70);
   const [humanizeOn, setHumanizeOn] = useState(false);
   const [randomVariation, setRandomVariation] = useState(false);
@@ -93,6 +118,13 @@ export default function ChordStudio() {
   // Drum kit mute/solo state
   const drumKitState = useDrumKitState();
 
+  // Instrument browser state
+  const [instrumentBrowserOpen, setInstrumentBrowserOpen] = useState(false);
+  const [recentInstruments, setRecentInstruments] = useState<string[]>([
+    "piano", "synth", "bass", "pad", "pluck", "epiano",
+  ]);
+  const instrumentRecs = useInstrumentRecommendations(progression);
+
   // Sync vol to audio engine
   useEffect(() => {
     if (getMasterGain()) setMasterVolAudio(masterVol / 100);
@@ -112,32 +144,35 @@ export default function ChordStudio() {
   }, [autoMix]);
 
   // ─── APPLY DRUM PATTERN ───
-  const handleApplyDrumPattern = useCallback((patternId: string) => {
-    const pattern = PATTERN_MAP[patternId];
-    if (!pattern || !progression) return;
+  const handleApplyDrumPattern = useCallback(
+    (patternId: string) => {
+      const pattern = PATTERN_MAP[patternId];
+      if (!pattern || !progression) return;
 
-    setActiveStepGridPattern(pattern);
-    stopPreview();
+      setActiveStepGridPattern(pattern);
+      stopPreview();
 
-    const drumPattern = stepGridToDrumPattern(pattern, {
-      intensityScale: drumIntensity / 100,
-      humanize: humanizeOn,
-      humanizeAmount: 0.5,
-      swingPercent: progression.swing || 0,
-      applyProbability: randomVariation,
-    });
+      const drumPattern = stepGridToDrumPattern(pattern, {
+        intensityScale: drumIntensity / 100,
+        humanize: humanizeOn,
+        humanizeAmount: 0.5,
+        swingPercent: progression.swing || 0,
+        applyProbability: randomVariation,
+      });
 
-    const updated = { ...progression, drums: drumPattern };
-    setProgression(updated);
-    playbackRef.current.progression = updated;
+      const updated = { ...progression, drums: drumPattern };
+      setProgression(updated);
+      playbackRef.current.progression = updated;
 
-    // Update scheduler steps per bar for visual cursor
-    if (playbackRef.current.scheduler) {
-      playbackRef.current.scheduler.setStepsPerBar(pattern.totalSteps);
-    }
+      // Update scheduler steps per bar for visual cursor
+      if (playbackRef.current.scheduler) {
+        playbackRef.current.scheduler.setStepsPerBar(pattern.totalSteps);
+      }
 
-    setDrumPatternPanelOpen(false);
-  }, [progression, drumIntensity, humanizeOn, randomVariation, stopPreview]);
+      setDrumPatternPanelOpen(false);
+    },
+    [progression, drumIntensity, humanizeOn, randomVariation, stopPreview],
+  );
 
   // Re-convert pattern when intensity/humanize/variation changes
   useEffect(() => {
@@ -157,12 +192,15 @@ export default function ChordStudio() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drumIntensity, humanizeOn, randomVariation]);
 
-  const handlePreviewPattern = useCallback((patternId: string) => {
-    const pattern = PATTERN_MAP[patternId];
-    if (!pattern) return;
-    const bpm = progression?.tempo || 120;
-    togglePreview(pattern, bpm);
-  }, [progression?.tempo, togglePreview]);
+  const handlePreviewPattern = useCallback(
+    (patternId: string) => {
+      const pattern = PATTERN_MAP[patternId];
+      if (!pattern) return;
+      const bpm = progression?.tempo || 120;
+      togglePreview(pattern, bpm);
+    },
+    [progression?.tempo, togglePreview],
+  );
 
   // ─── PLAYBACK ENGINE ───
   const stopPlayback = useCallback(() => {
@@ -247,7 +285,11 @@ export default function ChordStudio() {
               ? swing * (spb / 3)
               : 0;
 
-          const schedWithVel = (arr: number[], vels: number[] | undefined, type: string) =>
+          const schedWithVel = (
+            arr: number[],
+            vels: number[] | undefined,
+            type: string,
+          ) =>
             arr.forEach((pos, i) => {
               const vel = vels && vels[i] !== undefined ? vels[i] : 1.0;
               const time = barStartTime + (pos % pl) * spb + swOff(pos);
@@ -313,7 +355,14 @@ export default function ChordStudio() {
     ref.scheduler = scheduler;
     setIsPlaying(true);
     scheduler.start(bpm, totalBars);
-  }, [progression, instrument, drumsOn, melodyOn, melodyStyle, activeStepGridPattern]);
+  }, [
+    progression,
+    instrument,
+    drumsOn,
+    melodyOn,
+    melodyStyle,
+    activeStepGridPattern,
+  ]);
 
   const togglePlayback = useCallback(() => {
     if (isPlaying) {
@@ -373,6 +422,10 @@ export default function ChordStudio() {
         setProgression(data.progression);
         setTempo(data.progression.tempo || 120);
         setActiveStepGridPattern(null); // reset active pattern on new progression
+        // Apply AI-suggested instrument if valid
+        if (data.suggestedInstrument) {
+          handleInstrumentChange(data.suggestedInstrument);
+        }
         // Preload genre-specific sample pack
         const player = getSamplePlayer();
         if (player) {
@@ -455,6 +508,14 @@ export default function ChordStudio() {
     playbackRef.current.progression = p;
   };
 
+  const handleInstrumentChange = useCallback((id: string) => {
+    setInstrument(id);
+    setRecentInstruments((prev) => {
+      const filtered = prev.filter((x) => x !== id);
+      return [id, ...filtered].slice(0, 8);
+    });
+  }, []);
+
   const handleDrumEngine = (mode: DrumEngineMode) => {
     setDrumEngine(mode);
     setDrumEngineMode(mode);
@@ -531,12 +592,13 @@ export default function ChordStudio() {
                 <div
                   className="overflow-hidden rounded-[14px] px-4 pt-3.5 pb-2.5 mb-3.5"
                   style={{
-                    background: "rgba(4,4,6,0.8)",
+                    background: "rgba(4,4,6,0)",
                     border: "1px solid var(--color-border)",
                   }}
                 >
                   <div className="font-mono text-[0.58rem] text-text-dim tracking-[0.18em] uppercase mb-2.5 opacity-70">
-                    Keyboard{drumsOn ? " \u00b7 Drums" : ""} &middot; click to play
+                    Keyboard{drumsOn ? " \u00b7 Drums" : ""} &middot; click to
+                    play
                   </div>
                   <div className="flex items-center gap-3">
                     {drumsOn && (
@@ -593,9 +655,10 @@ export default function ChordStudio() {
                   melodyPriority={melodyPriority}
                   autoMix={autoMix}
                   hasActivePattern={activeStepGridPattern !== null}
+                  recentInstruments={recentInstruments}
                   onPlayToggle={togglePlayback}
                   onTempo={updateTempo}
-                  onInstrument={setInstrument}
+                  onInstrument={handleInstrumentChange}
                   onDrums={setDrumsOn}
                   onMelody={setMelodyOn}
                   onMasterVol={(v) => {
@@ -605,6 +668,7 @@ export default function ChordStudio() {
                   onMelodyStyle={handleMelodyStyle}
                   onDrumEngine={handleDrumEngine}
                   onOpenPatterns={() => setDrumPatternPanelOpen(true)}
+                  onOpenInstruments={() => setInstrumentBrowserOpen(true)}
                   onDrumIntensity={setDrumIntensity}
                   onHumanize={setHumanizeOn}
                   onSwing={updateSwing}
@@ -648,6 +712,15 @@ export default function ChordStudio() {
         activeStep={isPlaying ? activeStep : undefined}
         onPreview={handlePreviewPattern}
         onApply={handleApplyDrumPattern}
+      />
+
+      {/* Instrument Browser Overlay */}
+      <InstrumentBrowser
+        open={instrumentBrowserOpen}
+        onClose={() => setInstrumentBrowserOpen(false)}
+        currentInstrument={instrument}
+        onSelect={handleInstrumentChange}
+        recommendations={instrumentRecs?.scores}
       />
     </>
   );

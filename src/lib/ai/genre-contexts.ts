@@ -36,8 +36,23 @@ COHERENCE RULES — what separates amateur from professional:
    - Rhythmically complex (syncopated kicks, triplet hats, polyrhythm) → keep chords simple (triads/basic 7ths).
    - Both complex simultaneously = cluttered. Only do this if the genre explicitly demands it (e.g. jazz fusion, afrobeats).
 
+INSTRUMENT RULES:
+- Valid instrument IDs: piano, epiano, celesta, synth, pad, choir, synth_lead, electric_clean, electric_distorted, acoustic_strum, acoustic_fingerpick, pan_flute, accordion, sitar, harmonica, oboe, electric_violin, harp, marimba, vibraphone, bass, electric_bass, upright_bass, organ, bells, pluck, orchestra_strings, brass, trombone, flute
+- Genre-to-instrument preferences:
+  * jazz → epiano, upright_bass, vibraphone, flute, trombone
+  * trap/drill → synth, pad, pluck, synth_lead
+  * lofi → epiano, piano, acoustic_fingerpick, vibraphone, pad
+  * gospel/soul → organ, piano, epiano, orchestra_strings, brass
+  * rnb → epiano, pad, electric_bass, choir
+  * funk → electric_clean, electric_bass, organ, brass
+  * afrobeats → marimba, electric_clean, accordion
+  * house → synth, synth_lead, pad
+  * ambient → pad, choir, harp, pan_flute, orchestra_strings
+- You MAY include an optional "suggestedInstrument" field in the progression object with a valid instrument ID.
+- Only suggest an instrument when the genre/mood strongly implies one. Do not always include it.
+
 OUTPUT SCHEMA — ONLY valid JSON, nothing else:
-{"message":"1-2 sentence producer voice, no AI assistant tone","progression":{"chords":[],"tempo":0,"key":"","genre":"","mood":"","bars":0,"description":"","harmonicFunction":[],"swing":0,"drums":{"patternLengthBeats":4,"kicks":[],"snares":[],"hihats":[],"claps":[],"ohats":[]}}}
+{"message":"1-2 sentence producer voice, no AI assistant tone","progression":{"chords":[],"tempo":0,"key":"","genre":"","mood":"","bars":0,"description":"","harmonicFunction":[],"swing":0,"suggestedInstrument":"(optional)","drums":{"patternLengthBeats":4,"kicks":[],"snares":[],"hihats":[],"claps":[],"ohats":[]}}}
 bars MUST equal chords.length. Default 4, but match the user's request (4/8/12/16).`;
 
 export const GENRE_CONTEXTS: Record<string, string> = {

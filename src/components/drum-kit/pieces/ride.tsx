@@ -11,7 +11,7 @@ export default function RideSVG() {
       <ellipse cx={0} cy={0} rx={28} ry={9.5}
         fill="none" stroke="rgba(255,209,102,0.06)" strokeWidth={0.5} />
       <text y={28} textAnchor="middle"
-        fill="var(--color-text-dim)" fontSize={8} fontFamily="var(--font-mono)">
+        fill="var(--color-text-dim)" fontSize={13} fontFamily="var(--font-mono)">
         RIDE
       </text>
     </>

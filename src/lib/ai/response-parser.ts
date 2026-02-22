@@ -1,5 +1,8 @@
+import { getInstrument } from "../instruments/registry";
+
 interface ParsedResponse {
   message: string;
+  suggestedInstrument?: string;
   progression?: {
     chords: string[];
     tempo: number;
@@ -10,6 +13,7 @@ interface ParsedResponse {
     description?: string;
     harmonicFunction: string[];
     swing: number;
+    suggestedInstrument?: string;
     drums: {
       patternLengthBeats: number;
       kicks: number[];
@@ -66,6 +70,16 @@ export function parseAIResponse(raw: string): ParsedResponse {
     // Ensure swing field exists
     if (typeof parsed.progression.swing !== "number") {
       parsed.progression.swing = 0;
+    }
+
+    // Extract and validate suggestedInstrument
+    if (parsed.progression.suggestedInstrument) {
+      const instId = parsed.progression.suggestedInstrument;
+      if (getInstrument(instId)) {
+        parsed.suggestedInstrument = instId;
+      }
+      // Remove from progression object (it's a top-level response field)
+      delete parsed.progression.suggestedInstrument;
     }
   }
 

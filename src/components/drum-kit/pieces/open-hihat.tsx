@@ -12,7 +12,7 @@ export default function OpenHihatSVG() {
       <line x1={-10} y1={0} x2={10} y2={0}
         stroke="rgba(255,209,102,0.25)" strokeWidth={0.5} strokeDasharray="2 2" />
       <text y={24} textAnchor="middle"
-        fill="var(--color-text-dim)" fontSize={8} fontFamily="var(--font-mono)">
+        fill="var(--color-text-dim)" fontSize={13} fontFamily="var(--font-mono)">
         OH
       </text>
     </>

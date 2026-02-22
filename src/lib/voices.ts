@@ -1,4 +1,8 @@
 import { ensureAudioGraph, getInstrumentBus, getBassBus } from "./audio-engine";
+import { getInstrument } from "./instruments/registry";
+
+/** Clamp filter frequency to stay safely below Nyquist (prevents BiquadFilter NaN state) */
+const safeFreq = (f: number, sr: number) => Math.min(f, sr * 0.45);
 
 function voicePiano(freq: number, t: number, dur: number): void {
   const ctx = ensureAudioGraph();
@@ -8,8 +12,8 @@ function voicePiano(freq: number, t: number, dur: number): void {
   // Lowpass damping filter: freq*6 → freq*2 over note duration
   const damper = ctx.createBiquadFilter();
   damper.type = "lowpass";
-  damper.frequency.setValueAtTime(freq * 6, t);
-  damper.frequency.exponentialRampToValueAtTime(freq * 2, t + dur);
+  damper.frequency.setValueAtTime(safeFreq(freq * 6, ctx.sampleRate), t);
+  damper.frequency.exponentialRampToValueAtTime(safeFreq(freq * 2, ctx.sampleRate), t + dur);
   damper.Q.value = 0.7;
   amp.connect(damper);
   damper.connect(out);
@@ -42,7 +46,7 @@ function voicePiano(freq: number, t: number, dur: number): void {
   noiseSrc.buffer = noiseBuf;
   const noiseBP = ctx.createBiquadFilter();
   noiseBP.type = "bandpass";
-  noiseBP.frequency.value = freq * 4;
+  noiseBP.frequency.value = safeFreq(freq * 4, ctx.sampleRate);
   noiseBP.Q.value = 1;
   const noiseGain = ctx.createGain();
   noiseGain.gain.value = 0.12;
@@ -72,7 +76,7 @@ function voiceSynth(freq: number, t: number, dur: number): void {
   filt.type = "lowpass";
   filt.Q.value = 3.5;
   filt.frequency.setValueAtTime(200, t);
-  filt.frequency.exponentialRampToValueAtTime(freq * 6, t + 0.4);
+  filt.frequency.exponentialRampToValueAtTime(safeFreq(freq * 6, ctx.sampleRate), t + 0.4);
   amp.connect(filt);
   filt.connect(out);
 
@@ -105,7 +109,7 @@ function voicePad(freq: number, t: number, dur: number): void {
   const amp = ctx.createGain();
   const f = ctx.createBiquadFilter();
   f.type = "lowpass";
-  f.frequency.value = freq * 4;
+  f.frequency.value = safeFreq(freq * 4, ctx.sampleRate);
   f.Q.value = 0.5;
   amp.connect(f);
   f.connect(out);
@@ -210,8 +214,8 @@ function voicePluck(freq: number, t: number): void {
   // Lowpass filter: Karplus-Strong-style darkening
   const filt = ctx.createBiquadFilter();
   filt.type = "lowpass";
-  filt.frequency.setValueAtTime(freq * 12, t);
-  filt.frequency.exponentialRampToValueAtTime(freq * 1.5, t + 0.4);
+  filt.frequency.setValueAtTime(safeFreq(freq * 12, ctx.sampleRate), t);
+  filt.frequency.exponentialRampToValueAtTime(safeFreq(freq * 1.5, ctx.sampleRate), t + 0.4);
   filt.Q.value = 0.7;
   amp.connect(filt);
 
@@ -287,16 +291,33 @@ function voiceEPiano(freq: number, t: number, dur: number): void {
   amp.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.35);
 }
 
+// Legacy IDs handled by the switch below — must NOT go through registry
+// to avoid infinite recursion (registry wraps back to playVoice for these)
+const LEGACY_IDS = new Set(["piano", "synth", "pad", "organ", "bells", "pluck", "bass", "epiano"]);
+
 export function playVoice(inst: string, freq: number, t: number, dur: number): void {
-  switch (inst) {
-    case "piano":  voicePiano(freq, t, dur); break;
-    case "synth":  voiceSynth(freq, t, dur); break;
-    case "pad":    voicePad(freq, t, dur); break;
-    case "organ":  voiceOrgan(freq, t, dur); break;
-    case "bells":  voiceBells(freq, t, dur); break;
-    case "pluck":  voicePluck(freq, t); break;
-    case "bass":   voiceBass(freq, t, dur); break;
-    case "epiano": voiceEPiano(freq, t, dur); break;
-    default:       voicePiano(freq, t, dur);
+  // Legacy instruments: use direct switch to avoid recursion
+  if (LEGACY_IDS.has(inst)) {
+    switch (inst) {
+      case "piano":  voicePiano(freq, t, dur); break;
+      case "synth":  voiceSynth(freq, t, dur); break;
+      case "pad":    voicePad(freq, t, dur); break;
+      case "organ":  voiceOrgan(freq, t, dur); break;
+      case "bells":  voiceBells(freq, t, dur); break;
+      case "pluck":  voicePluck(freq, t); break;
+      case "bass":   voiceBass(freq, t, dur); break;
+      case "epiano": voiceEPiano(freq, t, dur); break;
+    }
+    return;
   }
+
+  // New instruments: look up in registry
+  const def = getInstrument(inst);
+  if (def) {
+    def.play(freq, t, dur);
+    return;
+  }
+
+  // Unknown ID: fall back to piano
+  voicePiano(freq, t, dur);
 }

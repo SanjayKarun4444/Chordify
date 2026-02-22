@@ -295,3 +295,14 @@
 .panel-slide-up {
   animation: panelSlideUp 0.3s cubic-bezier(0.22,1,0.36,1) forwards;
 }
+
+/* ─── Instrument Browser ─── */
+
+@keyframes instrumentGlow {
+  0%, 100% { box-shadow: 0 0 12px var(--glow-color, rgba(255,209,102,0.3)); }
+  50%      { box-shadow: 0 0 22px var(--glow-color, rgba(255,209,102,0.5)); }
+}
+
+.instrument-active-glow {
+  animation: instrumentGlow 2s ease-in-out infinite;
+}

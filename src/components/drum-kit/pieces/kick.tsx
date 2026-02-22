@@ -12,7 +12,7 @@ export default function KickSVG() {
         fill="rgba(255,209,102,0.12)" />
       {/* Label */}
       <text y={55} textAnchor="middle"
-        fill="var(--color-text-dim)" fontSize={9} fontFamily="var(--font-mono)">
+        fill="var(--color-text-dim)" fontSize={14} fontFamily="var(--font-mono)">
         KICK
       </text>
     </>

@@ -1,6 +1,7 @@
 "use client";
 
-import { INSTRUMENTS, INSTRUMENT_COLORS } from "@/lib/constants";
+import { INSTRUMENT_COLORS } from "@/lib/constants";
+import { getInstrument, getAllInstruments } from "@/lib/instruments";
 import type { DrumEngineMode } from "@/lib/audio/drums/types";
 import MixMeter from "./mix-meter";
 
@@ -21,6 +22,7 @@ interface TransportBarProps {
   melodyPriority: boolean;
   autoMix: boolean;
   hasActivePattern: boolean;
+  recentInstruments: string[];
   onPlayToggle: () => void;
   onTempo: (v: number) => void;
   onInstrument: (id: string) => void;
@@ -31,6 +33,7 @@ interface TransportBarProps {
   onDrumEngine: (mode: DrumEngineMode) => void;
   // New callbacks
   onOpenPatterns: () => void;
+  onOpenInstruments: () => void;
   onDrumIntensity: (v: number) => void;
   onHumanize: (on: boolean) => void;
   onSwing: (v: number) => void;
@@ -76,8 +79,9 @@ function Checkbox({ label, checked, onChange, color }: {
 export default function TransportBar({
   isPlaying, tempo, instrument, drumsOn, melodyOn, masterVol, melodyStyle, drumEngine,
   drumIntensity, humanizeOn, swing, randomVariation, melodyPriority, autoMix, hasActivePattern,
+  recentInstruments,
   onPlayToggle, onTempo, onInstrument, onDrums, onMelody, onMasterVol, onMelodyStyle, onDrumEngine,
-  onOpenPatterns, onDrumIntensity, onHumanize, onSwing, onRandomVariation, onMelodyPriority, onAutoMix,
+  onOpenPatterns, onOpenInstruments, onDrumIntensity, onHumanize, onSwing, onRandomVariation, onMelodyPriority, onAutoMix,
 }: TransportBarProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -222,7 +226,7 @@ export default function TransportBar({
         </div>
       </div>
 
-      {/* Row 2: Instruments */}
+      {/* Row 2: Instruments — quick access + browse */}
       <div
         className="flex items-center gap-2 flex-wrap px-3.5 py-2.5 rounded-xl"
         style={{
@@ -234,13 +238,15 @@ export default function TransportBar({
           Instrument
         </span>
         <div className="flex gap-[5px] flex-wrap flex-1">
-          {INSTRUMENTS.map((inst) => {
-            const active = instrument === inst.id;
-            const col = INSTRUMENT_COLORS[inst.id];
+          {recentInstruments.map((id) => {
+            const def = getInstrument(id);
+            if (!def) return null;
+            const active = instrument === id;
+            const col = def.color || INSTRUMENT_COLORS[id] || "#FFD166";
             return (
               <button
-                key={inst.id}
-                onClick={() => onInstrument(inst.id)}
+                key={id}
+                onClick={() => onInstrument(id)}
                 className="px-[13px] py-[5px] rounded-full font-sans text-[0.75rem] font-medium cursor-pointer transition-all duration-200 ease-out"
                 style={{
                   border: `1px solid ${active ? col : "rgba(255,255,255,0.1)"}`,
@@ -249,10 +255,22 @@ export default function TransportBar({
                   boxShadow: active ? `0 0 14px ${col}44` : "none",
                 }}
               >
-                {inst.label}
+                {def.label}
               </button>
             );
           })}
+          {/* Browse all instruments button */}
+          <button
+            onClick={onOpenInstruments}
+            className="px-[13px] py-[5px] rounded-full font-mono text-[0.68rem] font-medium cursor-pointer transition-all duration-200 ease-out"
+            style={{
+              border: "1px solid rgba(255,209,102,0.25)",
+              background: "rgba(255,209,102,0.06)",
+              color: "var(--color-gold)",
+            }}
+          >
+            Browse {getAllInstruments().length}+
+          </button>
         </div>
 
         {/* Melody style */}

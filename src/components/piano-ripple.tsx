@@ -161,7 +161,25 @@ export default function PianoRipple({ activeNotes = [], onKeyClick }: PianoRippl
                   ? "0 0 22px rgba(255,209,102,0.8), inset 0 0 10px rgba(255,209,102,0.3)"
                   : "inset 0 -3px 6px rgba(0,0,0,0.15)",
               }}
-            />
+            >
+              {(
+                <span
+                  style={{
+                    position: "absolute",
+                    bottom: 4,
+                    left: 0,
+                    right: 0,
+                    textAlign: "center",
+                    fontSize: 9,
+                    color: "rgba(0,0,0,0.4)",
+                    pointerEvents: "none",
+                    userSelect: "none",
+                  }}
+                >
+                  {key.note.replace(/\d+$/, "")}
+                </span>
+              )}
+            </div>
           );
         })}
       </div>

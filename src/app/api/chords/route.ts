@@ -119,6 +119,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       message: parsed.message || "",
       progression: parsed.progression || null,
+      suggestedInstrument: parsed.suggestedInstrument || null,
       raw: rawContent,
       _meta: {
         genre: detectedGenre || parsed.progression?.genre || null,

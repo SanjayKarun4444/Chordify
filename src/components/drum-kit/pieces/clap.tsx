@@ -13,7 +13,7 @@ export default function ClapSVG() {
       <line x1={12} y1={8} x2={18} y2={10}
         stroke="rgba(255,209,102,0.2)" strokeWidth={0.8} />
       <text y={26} textAnchor="middle"
-        fill="var(--color-text-dim)" fontSize={8} fontFamily="var(--font-mono)">
+        fill="var(--color-text-dim)" fontSize={13} fontFamily="var(--font-mono)">
         CLAP
       </text>
     </>
