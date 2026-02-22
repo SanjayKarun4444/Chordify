@@ -83,7 +83,7 @@ export default function ChatPanel({ messages, isThinking, onSend }: ChatPanelPro
               ))}
             </div>
             <span className="font-mono text-[0.6rem] text-teal tracking-[0.12em]">
-              Composing\u2026
+              {"Composing\u2026"}
             </span>
           </div>
         )}
@@ -95,7 +95,7 @@ export default function ChatPanel({ messages, isThinking, onSend }: ChatPanelPro
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
-          placeholder="Describe your sound \u2014 genre, mood, key, BPM\u2026"
+          placeholder={"Describe your sound \u2014 genre, mood, key, BPM\u2026"}
           className="flex-1 px-[18px] py-3.5 rounded-xl font-sans text-[0.9rem] text-text outline-none transition-all duration-250 focus:border-gold focus:shadow-[0_0_22px_rgba(255,209,102,0.12),inset_0_0_18px_rgba(255,209,102,0.02)]"
           style={{
             background: "rgba(8,8,10,0.85)",

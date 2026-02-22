@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { conversationHistory = [], userMessage } = await request.json();
+  const { conversationHistory = [], userMessage, currentProgression } = await request.json();
 
   if (!userMessage || typeof userMessage !== "string") {
     return NextResponse.json(
@@ -33,10 +33,19 @@ export async function POST(request: Request) {
   const systemPrompt = buildSystemPrompt(userMessage);
   const trimmedHistory = conversationHistory.slice(-10);
 
+  // Inject current progression context so the AI knows what's playing
+  let augmentedMessage = userMessage;
+  if (currentProgression) {
+    const p = currentProgression;
+    augmentedMessage =
+      `CURRENT_PROGRESSION: ${JSON.stringify({ chords: p.chords, key: p.key, tempo: p.tempo, genre: p.genre, mood: p.mood, bars: p.bars || p.chords?.length, swing: p.swing })}\n\n` +
+      `USER REQUEST: ${userMessage}`;
+  }
+
   const messages = [
     { role: "system", content: systemPrompt },
     ...trimmedHistory,
-    { role: "user", content: userMessage },
+    { role: "user", content: augmentedMessage },
   ];
 
   try {

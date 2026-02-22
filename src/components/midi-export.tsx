@@ -165,7 +165,7 @@ export default function MidiExport({ progression }: MidiExportProps) {
               onClick={() => downloadTrack(t)}
               className="px-2 py-[3px] rounded-[5px] font-mono text-[0.58rem] text-gold cursor-pointer transition-all duration-150 bg-transparent border border-[rgba(255,209,102,0.28)] hover:bg-gold hover:text-black"
             >
-              \u2193
+              {"\u2193"}
             </button>
           </div>
         ))}
