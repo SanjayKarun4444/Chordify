@@ -3,11 +3,20 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { Progression, ChatMessage, MelodyNote } from "@/lib/types";
 import { DEFAULT_PROGRESSIONS } from "@/lib/constants";
-import { ensureAudioGraph, getMasterGain, setMasterVol as setMasterVolAudio } from "@/lib/audio-engine";
+import { ensureAudioGraph, getMasterGain, getBassBus, getDrumGain, getHatPanner, setMasterVol as setMasterVolAudio } from "@/lib/audio-engine";
 import { playVoice } from "@/lib/voices";
-import { playDrum } from "@/lib/drums";
+import { playDrum, initSamplePlayer, getSamplePlayer, setDrumEngineMode } from "@/lib/drums";
+import type { DrumEngineMode } from "@/lib/audio/drums/types";
+import { getPackForGenre } from "@/lib/audio/drums/genre-pack-map";
 import { chordToMidi, normalizeToDisplayRange } from "@/lib/chord-utils";
 import { generateMelody, playMelodyNote } from "@/lib/melody-engine";
+import { LookaheadScheduler } from "@/lib/scheduler";
+import { triggerSidechainDuck } from "@/lib/effects";
+import type { StepGridPattern } from "@/lib/drums/pattern-library";
+import { stepGridToDrumPattern, PATTERN_MAP } from "@/lib/drums/pattern-library";
+import { useDrumRecommendations } from "@/hooks/useDrumRecommendations";
+import { useDrumPreview } from "@/hooks/useDrumPreview";
+import { updateMixState, setDrumIntensity as setMixDrumIntensity, setMelodyPriority as setMixMelodyPriority } from "@/lib/mix-engine";
 import BackgroundCanvas from "./background-canvas";
 import LoadingScreen from "./loading-screen";
 import Header from "./header";
@@ -18,11 +27,10 @@ import PianoRipple from "./piano-ripple";
 import TransportBar from "./transport-bar";
 import ChordCard from "./chord-card";
 import MidiExport from "./midi-export";
+import DrumPatternSelector from "./drum-pattern-selector";
 
 interface PlaybackRef {
-  timeout: ReturnType<typeof setTimeout> | null;
-  startTime: number | null;
-  chordIdx: number;
+  scheduler: LookaheadScheduler | null;
   melodyNotes: MelodyNote[];
   defaultIdx: number;
   playing: boolean;
@@ -50,13 +58,22 @@ export default function ChordStudio() {
   const [tempo, setTempo] = useState(120);
   const [masterVol, setMasterVol] = useState(80);
   const [melodyStyle, setMelodyStyle] = useState("none");
+  const [drumEngine, setDrumEngine] = useState<DrumEngineMode>("samples");
   const [activeChordIdx, setActiveChordIdx] = useState(-1);
   const [activeNotes, setActiveNotes] = useState<number[]>([]);
 
+  // Drum pattern system state
+  const [drumPatternPanelOpen, setDrumPatternPanelOpen] = useState(false);
+  const [activeStepGridPattern, setActiveStepGridPattern] = useState<StepGridPattern | null>(null);
+  const [drumIntensity, setDrumIntensity] = useState(70);
+  const [humanizeOn, setHumanizeOn] = useState(false);
+  const [randomVariation, setRandomVariation] = useState(false);
+  const [melodyPriority, setMelodyPriority] = useState(true);
+  const [autoMix, setAutoMix] = useState(true);
+  const [activeStep, setActiveStep] = useState(-1);
+
   const playbackRef = useRef<PlaybackRef>({
-    timeout: null,
-    startTime: null,
-    chordIdx: 0,
+    scheduler: null,
     melodyNotes: [],
     defaultIdx: 0,
     playing: false,
@@ -66,109 +83,122 @@ export default function ChordStudio() {
     melodyOn: false,
   });
 
+  // Drum recommendations
+  const recommendations = useDrumRecommendations(progression);
+  const { togglePreview, stopPreview } = useDrumPreview();
+
   // Sync vol to audio engine
   useEffect(() => {
     if (getMasterGain()) setMasterVolAudio(masterVol / 100);
   }, [masterVol]);
+
+  // Sync mix engine state
+  useEffect(() => {
+    setMixDrumIntensity(drumIntensity / 100);
+  }, [drumIntensity]);
+
+  useEffect(() => {
+    setMixMelodyPriority(melodyPriority);
+  }, [melodyPriority]);
+
+  useEffect(() => {
+    updateMixState({ autoMix });
+  }, [autoMix]);
+
+  // ─── APPLY DRUM PATTERN ───
+  const handleApplyDrumPattern = useCallback((patternId: string) => {
+    const pattern = PATTERN_MAP[patternId];
+    if (!pattern || !progression) return;
+
+    setActiveStepGridPattern(pattern);
+    stopPreview();
+
+    const drumPattern = stepGridToDrumPattern(pattern, {
+      intensityScale: drumIntensity / 100,
+      humanize: humanizeOn,
+      humanizeAmount: 0.5,
+      swingPercent: progression.swing || 0,
+      applyProbability: randomVariation,
+    });
+
+    const updated = { ...progression, drums: drumPattern };
+    setProgression(updated);
+    playbackRef.current.progression = updated;
+
+    // Update scheduler steps per bar for visual cursor
+    if (playbackRef.current.scheduler) {
+      playbackRef.current.scheduler.setStepsPerBar(pattern.totalSteps);
+    }
+
+    setDrumPatternPanelOpen(false);
+  }, [progression, drumIntensity, humanizeOn, randomVariation, stopPreview]);
+
+  // Re-convert pattern when intensity/humanize/variation changes
+  useEffect(() => {
+    if (!activeStepGridPattern || !progression) return;
+
+    const drumPattern = stepGridToDrumPattern(activeStepGridPattern, {
+      intensityScale: drumIntensity / 100,
+      humanize: humanizeOn,
+      humanizeAmount: 0.5,
+      swingPercent: progression.swing || 0,
+      applyProbability: randomVariation,
+    });
+
+    const updated = { ...progression, drums: drumPattern };
+    setProgression(updated);
+    playbackRef.current.progression = updated;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drumIntensity, humanizeOn, randomVariation]);
+
+  const handlePreviewPattern = useCallback((patternId: string) => {
+    const pattern = PATTERN_MAP[patternId];
+    if (!pattern) return;
+    const bpm = progression?.tempo || 120;
+    togglePreview(pattern, bpm);
+  }, [progression?.tempo, togglePreview]);
 
   // ─── PLAYBACK ENGINE ───
   const stopPlayback = useCallback(() => {
     setIsPlaying(false);
     setActiveChordIdx(-1);
     setActiveNotes([]);
+    setActiveStep(-1);
     const ref = playbackRef.current;
-    if (ref.timeout) {
-      clearTimeout(ref.timeout);
-      ref.timeout = null;
+    if (ref.scheduler) {
+      ref.scheduler.stop();
     }
-    ref.startTime = null;
-  }, []);
-
-  const scheduleChord = useCallback(() => {
-    const ref = playbackRef.current;
-    const prog = ref.progression;
-    if (!prog || !ref.playing) return;
-    const ctx = ensureAudioGraph();
-    const bpm = prog.tempo || 120;
-    const spb = 60 / bpm;
-    const barDur = spb * 4;
-    const totalBars = prog.chords.length;
-
-    if (ref.startTime === null) {
-      ref.startTime = ctx.currentTime;
-      ref.chordIdx = 0;
-    }
-    if (ref.chordIdx >= totalBars) {
-      ref.chordIdx = 0;
-      ref.startTime = ctx.currentTime;
-    }
-
-    const barStart = ref.startTime + ref.chordIdx * barDur;
-    const msUntilBar = Math.max(0, (barStart - ctx.currentTime) * 1000);
-    const uiIdx = ref.chordIdx;
-
-    setTimeout(() => {
-      if (!ref.playing) return;
-      const chord = prog.chords[uiIdx];
-      const midiNotes = chordToMidi(chord);
-      setActiveChordIdx(uiIdx);
-      setActiveNotes(normalizeToDisplayRange(midiNotes));
-
-      // Schedule audio
-      midiNotes.forEach((midi) => {
-        const freq = 440 * Math.pow(2, (midi - 69) / 12);
-        playVoice(ref.instrument || "piano", freq, barStart, barDur);
-      });
-
-      // Drums
-      if (ref.drumsOn && prog.drums) {
-        const d = prog.drums;
-        const pl = d.patternLengthBeats || 4;
-        const swing = (prog.swing || 0) / 100;
-        const swOff = (pos: number) =>
-          [0.5, 1.5, 2.5, 3.5].some((b) => Math.abs(pos - b) < 0.02)
-            ? swing * (spb / 3)
-            : 0;
-        const sched = (arr: number[], type: string) =>
-          arr.forEach((pos) =>
-            playDrum(type, barStart + (pos % pl) * spb + swOff(pos)),
-          );
-        sched(d.kicks || [], "kick");
-        sched(d.snares || [], "snare");
-        sched(d.hihats || [], "hihat");
-        sched(d.claps || [], "clap");
-      }
-
-      // Melody
-      if (ref.melodyOn && ref.melodyNotes.length) {
-        ref.melodyNotes
-          .filter((n) => n.bar === uiIdx)
-          .forEach((n) => {
-            playMelodyNote(
-              n.midi,
-              barStart + n.beatOffset * spb,
-              n.durationBeats * spb,
-            );
-          });
-      }
-    }, msUntilBar);
-
-    ref.chordIdx++;
-    const nextStart = ref.startTime + ref.chordIdx * barDur;
-    const msNext = Math.max(0, (nextStart - ctx.currentTime) * 1000);
-    ref.timeout = setTimeout(scheduleChord, msNext);
+    ref.playing = false;
   }, []);
 
   const startPlayback = useCallback(() => {
     if (!progression) return;
     const ref = playbackRef.current;
+    const ctx = ensureAudioGraph();
+
+    // Initialize sample player if not yet created
+    if (!getSamplePlayer()) {
+      const drumGain = getDrumGain();
+      if (drumGain) {
+        const player = initSamplePlayer(ctx, drumGain);
+        // Set hat destination for stereo routing
+        const hatPanner = getHatPanner();
+        if (hatPanner) player.setHatDestination(hatPanner);
+        // Preload common pack + genre pack
+        const genre = progression.genre || "";
+        const packId = getPackForGenre(genre);
+        player.loadPack(packId).catch(() => {
+          // Silently fall back to synth if samples fail to load
+        });
+      }
+    }
+
     ref.playing = true;
     ref.progression = progression;
     ref.instrument = instrument;
     ref.drumsOn = drumsOn;
     ref.melodyOn = melodyOn;
-    ref.startTime = null;
-    ref.chordIdx = 0;
+
     if (melodyStyle !== "none") {
       ref.melodyNotes = generateMelody(
         progression.chords,
@@ -178,13 +208,103 @@ export default function ChordStudio() {
     } else {
       ref.melodyNotes = [];
     }
+
+    const bpm = progression.tempo || 120;
+    const totalBars = progression.bars || progression.chords.length;
+
+    // Create scheduler with bar callback + visual step callback
+    const scheduler = new LookaheadScheduler(
+      ctx,
+      ({ barIndex, barStartTime }) => {
+        if (!ref.playing || !ref.progression) return;
+        const prog = ref.progression;
+        const spb = 60 / (prog.tempo || 120);
+        const barDur = spb * 4;
+        const numChords = prog.chords.length;
+
+        const chord = prog.chords[barIndex % numChords];
+        const midiNotes = chordToMidi(chord);
+
+        // Schedule voices
+        midiNotes.forEach((midi) => {
+          const freq = 440 * Math.pow(2, (midi - 69) / 12);
+          playVoice(ref.instrument || "piano", freq, barStartTime, barDur);
+        });
+
+        // Drums with velocity
+        if (ref.drumsOn && prog.drums) {
+          const d = prog.drums;
+          const pl = d.patternLengthBeats || 4;
+          const swing = (prog.swing || 0) / 100;
+          const swOff = (pos: number) =>
+            [0.5, 1.5, 2.5, 3.5].some((b) => Math.abs(pos - b) < 0.02)
+              ? swing * (spb / 3)
+              : 0;
+
+          const schedWithVel = (arr: number[], vels: number[] | undefined, type: string) =>
+            arr.forEach((pos, i) => {
+              const vel = vels && vels[i] !== undefined ? vels[i] : 1.0;
+              const time = barStartTime + (pos % pl) * spb + swOff(pos);
+              playDrum(type, time, vel);
+
+              // Trigger sidechain duck on bass bus when kick plays
+              if (type === "kick") {
+                const bassBus = getBassBus();
+                if (bassBus) {
+                  triggerSidechainDuck(bassBus.input, time);
+                }
+              }
+            });
+
+          schedWithVel(d.kicks || [], d.kickVels, "kick");
+          schedWithVel(d.snares || [], d.snareVels, "snare");
+          schedWithVel(d.hihats || [], d.hihatVels, "hihat");
+          schedWithVel(d.claps || [], d.clapVels, "clap");
+          schedWithVel(d.ohats || [], d.ohatVels, "ohat");
+        }
+
+        // Melody
+        if (ref.melodyOn && ref.melodyNotes.length) {
+          const spb = 60 / (prog.tempo || 120);
+          ref.melodyNotes
+            .filter((n) => n.bar === barIndex)
+            .forEach((n) => {
+              playMelodyNote(
+                n.midi,
+                barStartTime + n.beatOffset * spb,
+                n.durationBeats * spb,
+              );
+            });
+        }
+      },
+      // Visual bar update callback
+      (barIndex) => {
+        if (!ref.playing || !ref.progression) return;
+        const numChords = ref.progression.chords.length;
+        const chordIdx = barIndex % numChords;
+        const chord = ref.progression.chords[chordIdx];
+        const midiNotes = chordToMidi(chord);
+        setActiveChordIdx(chordIdx);
+        setActiveNotes(normalizeToDisplayRange(midiNotes));
+      },
+      // Visual step update callback
+      (_barIndex, step) => {
+        setActiveStep(step);
+      },
+    );
+
+    // Set steps per bar based on active pattern
+    if (activeStepGridPattern) {
+      scheduler.setStepsPerBar(activeStepGridPattern.totalSteps);
+    }
+
+    ref.scheduler = scheduler;
     setIsPlaying(true);
-    scheduleChord();
-  }, [progression, instrument, drumsOn, melodyOn, melodyStyle, scheduleChord]);
+    scheduler.start(bpm, totalBars);
+  }, [progression, instrument, drumsOn, melodyOn, melodyStyle, activeStepGridPattern]);
 
   const togglePlayback = useCallback(() => {
     if (isPlaying) {
-      playbackRef.current.playing = false;
       stopPlayback();
     } else {
       startPlayback();
@@ -202,8 +322,15 @@ export default function ChordStudio() {
     playbackRef.current.melodyOn = melodyOn;
   }, [melodyOn]);
   useEffect(() => {
-    if (progression)
-      playbackRef.current.progression = { ...progression, tempo };
+    if (progression) {
+      const p = { ...progression, tempo };
+      playbackRef.current.progression = p;
+      if (playbackRef.current.scheduler) {
+        playbackRef.current.scheduler.updateBpm(tempo);
+        const totalBars = p.bars || p.chords.length;
+        playbackRef.current.scheduler.updateTotalBars(totalBars);
+      }
+    }
   }, [tempo, progression]);
 
   // ─── AI BACKEND ───
@@ -220,6 +347,7 @@ export default function ChordStudio() {
         body: JSON.stringify({
           conversationHistory: conversationRef.current,
           userMessage: msg,
+          currentProgression: progression || undefined,
         }),
       });
       if (!res.ok) throw new Error((await res.text()) || "Backend error");
@@ -232,6 +360,13 @@ export default function ChordStudio() {
       if (data.progression) {
         setProgression(data.progression);
         setTempo(data.progression.tempo || 120);
+        setActiveStepGridPattern(null); // reset active pattern on new progression
+        // Preload genre-specific sample pack
+        const player = getSamplePlayer();
+        if (player) {
+          const packId = getPackForGenre(data.progression.genre || "");
+          player.loadPack(packId).catch(() => {});
+        }
       }
     } catch {
       setMessages((m) => [
@@ -256,6 +391,7 @@ export default function ChordStudio() {
     ref.defaultIdx = (ref.defaultIdx || 0) + 1;
     setProgression(prog);
     setTempo(prog.tempo);
+    setActiveStepGridPattern(null);
     setMessages((m) => [
       ...m,
       {
@@ -271,6 +407,30 @@ export default function ChordStudio() {
       const p = { ...progression, tempo: v };
       setProgression(p);
       playbackRef.current.progression = p;
+      if (playbackRef.current.scheduler) {
+        playbackRef.current.scheduler.updateBpm(v);
+      }
+    }
+  };
+
+  const updateSwing = (v: number) => {
+    if (!progression) return;
+    const p = { ...progression, swing: v };
+    setProgression(p);
+    playbackRef.current.progression = p;
+
+    // Re-convert active pattern with new swing
+    if (activeStepGridPattern) {
+      const drumPattern = stepGridToDrumPattern(activeStepGridPattern, {
+        intensityScale: drumIntensity / 100,
+        humanize: humanizeOn,
+        humanizeAmount: 0.5,
+        swingPercent: v,
+        applyProbability: randomVariation,
+      });
+      const updated = { ...p, drums: drumPattern };
+      setProgression(updated);
+      playbackRef.current.progression = updated;
     }
   };
 
@@ -281,6 +441,11 @@ export default function ChordStudio() {
     const p = { ...progression, chords };
     setProgression(p);
     playbackRef.current.progression = p;
+  };
+
+  const handleDrumEngine = (mode: DrumEngineMode) => {
+    setDrumEngine(mode);
+    setDrumEngineMode(mode);
   };
 
   const handleMelodyStyle = (style: string) => {
@@ -382,6 +547,14 @@ export default function ChordStudio() {
                   melodyOn={melodyOn}
                   masterVol={masterVol}
                   melodyStyle={melodyStyle}
+                  drumEngine={drumEngine}
+                  drumIntensity={drumIntensity}
+                  humanizeOn={humanizeOn}
+                  swing={progression.swing || 0}
+                  randomVariation={randomVariation}
+                  melodyPriority={melodyPriority}
+                  autoMix={autoMix}
+                  hasActivePattern={activeStepGridPattern !== null}
                   onPlayToggle={togglePlayback}
                   onTempo={updateTempo}
                   onInstrument={setInstrument}
@@ -392,6 +565,14 @@ export default function ChordStudio() {
                     setMasterVolAudio(v / 100);
                   }}
                   onMelodyStyle={handleMelodyStyle}
+                  onDrumEngine={handleDrumEngine}
+                  onOpenPatterns={() => setDrumPatternPanelOpen(true)}
+                  onDrumIntensity={setDrumIntensity}
+                  onHumanize={setHumanizeOn}
+                  onSwing={updateSwing}
+                  onRandomVariation={setRandomVariation}
+                  onMelodyPriority={setMelodyPriority}
+                  onAutoMix={setAutoMix}
                 />
 
                 {/* Chord cards */}
@@ -420,6 +601,16 @@ export default function ChordStudio() {
           </div>
         </div>
       </div>
+
+      {/* Drum Pattern Selector Overlay */}
+      <DrumPatternSelector
+        open={drumPatternPanelOpen}
+        onClose={() => setDrumPatternPanelOpen(false)}
+        recommendations={recommendations?.scores || []}
+        activeStep={isPlaying ? activeStep : undefined}
+        onPreview={handlePreviewPattern}
+        onApply={handleApplyDrumPattern}
+      />
     </>
   );
 }
